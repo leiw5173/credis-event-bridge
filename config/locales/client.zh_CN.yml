@@ -1,0 +1,4 @@
+zh_CN:
+  js:
+    credis_event_bridge:
+      demo_form_submission_failed: "表单已发生变化或无法核验，请重新选择模板后再提交。"

@@ -1,0 +1,5 @@
+zh_CN:
+  site_settings:
+    credis_demo_form_template_fields: "原生表单模板 ID 到 Credis 提交字段键的 JSON 映射。留空对象可关闭自动附加；请与 Credis 规则发布者核对这些身份。"
+    errors:
+      credis_demo_form_template_fields: "请填写 JSON 对象，最多 32 个不同的正整数模板 ID，字段键须非空且不超过 100 字符。"

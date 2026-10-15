@@ -1,0 +1,5 @@
+en:
+  site_settings:
+    credis_demo_form_template_fields: "JSON mapping of native Form Template IDs to the field keys used for Credis submissions. Use {} to disable automatic descriptors. Review these identities with the Credis rule publisher."
+    errors:
+      credis_demo_form_template_fields: "Use a JSON object with up to 32 distinct positive template IDs and nonempty field keys of at most 100 characters."

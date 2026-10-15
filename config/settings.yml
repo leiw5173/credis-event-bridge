@@ -1,0 +1,8 @@
+credis_event_bridge:
+  credis_demo_valid_tag_id:
+    default: 0
+    type: integer
+  credis_demo_form_template_fields:
+    default: "{}"
+    type: string
+    validator: "CredisEventBridge::DemoFormTemplateFieldsValidator"

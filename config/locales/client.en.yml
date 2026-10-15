@@ -1,0 +1,4 @@
+en:
+  js:
+    credis_event_bridge:
+      demo_form_submission_failed: "The form changed or could not be verified. Select the template again and retry."
