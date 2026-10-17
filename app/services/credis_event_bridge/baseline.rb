@@ -105,6 +105,7 @@ module CredisEventBridge
         result += ["demo_tag_reviews", "demo_tag_revision_projections"] if demo_tag_review_enabled?
         result += ["solved_answers"] if SolvedSource::ENABLED
         result += ["featured_topics"] if FeaturedSource::ENABLED
+        result += ["user_badges"] if ENV.fetch("CREDIS_FORUM_BADGE_CAPTURE", "false") == "true"
         ReportSource::ENABLED ? result + ["reports"] : result
       end
 
@@ -120,6 +121,7 @@ module CredisEventBridge
         result = PostLifecycle::ENABLED ? TARGET_TYPES.merge("topic_first_post" => ["Post"], "reply" => ["Post"]) : TARGET_TYPES
         result = result.merge("solved" => ["Post"]) if SolvedSource::ENABLED
         result = result.merge("featured" => ["Topic"]) if FeaturedSource::ENABLED
+        result = result.merge("badge" => ["UserBadge"]) if ENV.fetch("CREDIS_FORUM_BADGE_CAPTURE", "false") == "true"
         ReportSource::ENABLED ? result.merge("flag" => ["Reviewable"]) : result
       end
 
@@ -332,6 +334,9 @@ module CredisEventBridge
               SQL
             ),
         }
+        if ENV.fetch("CREDIS_FORUM_BADGE_CAPTURE", "false") == "true"
+          result["user_badges"] = watermark_for(connection, "SELECT COUNT(*) AS count, MAX(id) AS max_id, MAX(created_at) AS max_updated_at FROM user_badges WHERE user_id>0")
+        end
         result["regular_posts"] = watermark_for(connection, POST_WATERMARK_SQL) if PostLifecycle::ENABLED
         if demo_enabled?
           result["demo_form_evidence"] = watermark_for(connection, DEMO_WATERMARK_SQL)
@@ -401,6 +406,9 @@ module CredisEventBridge
               SQL
             ),
         }
+        if ENV.fetch("CREDIS_FORUM_BADGE_CAPTURE", "false") == "true"
+          result["user_badges"] = pg_watermark(connection, "SELECT COUNT(*) AS count, MAX(id) AS max_id, MAX(created_at) AS max_updated_at FROM user_badges WHERE user_id>0")
+        end
         result["regular_posts"] = pg_watermark(connection, POST_WATERMARK_SQL) if PostLifecycle::ENABLED
         if demo_enabled?
           result["demo_form_evidence"] = pg_watermark(connection, DEMO_WATERMARK_SQL)
@@ -597,6 +605,11 @@ module CredisEventBridge
       scan_solved_answers! if SolvedSource::ENABLED
       scan_featured_topics! if FeaturedSource::ENABLED
       scan_reports! if ReportSource::ENABLED
+      if ENV.fetch("CREDIS_FORUM_BADGE_CAPTURE", "false") == "true"
+        each_page(UserBadge.where("user_id > 0").select("id, user_id, created_at AS updated_at"), "user_badges") do |row|
+          put_canonical(kind: "badge", actor_user_id: row.user_id, target_type: "UserBadge", target_id: row.id, state: "active")
+        end
+      end
       if self.class.demo_enabled?
         # Counts and watermarks declare the bounded source journal, without
         # converting an existing submission or review into a new contribution.
@@ -724,6 +737,9 @@ module CredisEventBridge
       end
       if ReportSource::ENABLED
         relation = relation.or(CredisRelationRevision.where(relation_kind: "flag", target_type: "Reviewable"))
+      end
+      if ENV.fetch("CREDIS_FORUM_BADGE_CAPTURE", "false") == "true"
+        relation = relation.or(CredisRelationRevision.where(relation_kind: "badge", target_type: "UserBadge"))
       end
       columns = %i[relation_revision_id relation_kind actor_user_id target_type target_id updated_at state_code]
       columns << :featured_tag_id if FeaturedSource::ENABLED

@@ -35,6 +35,7 @@ class CredisEventOutbox < ActiveRecord::Base
     featured_operator_user_id
     report_evidence_id
     report_post_id
+    badge_snapshot
   ].freeze
 
   belongs_to :capture_epoch,

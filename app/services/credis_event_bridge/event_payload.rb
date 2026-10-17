@@ -39,6 +39,7 @@ module CredisEventBridge
         fields += CONTEXT_FIELDS if event.snapshot_schema_version.to_i >= 2
         fields += FEATURED_FIELDS if event.relation_kind == "featured"
         fields += REPORT_FIELDS if event.relation_kind == "flag"
+        fields += [:badge_snapshot] if event.relation_kind == "badge"
         event
           .attributes
           .slice(*fields.map(&:to_s))

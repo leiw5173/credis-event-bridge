@@ -32,6 +32,7 @@ require_relative "app/services/credis_event_bridge/maintenance_guard"
 require_relative "app/services/credis_event_bridge/operation"
 require_relative "app/services/credis_event_bridge/post_lifecycle"
 require_relative "app/services/credis_event_bridge/solved_source"
+require_relative "app/services/credis_event_bridge/badge_source"
 require_relative "app/services/credis_event_bridge/source_wrapper_contract"
 require_relative "app/services/credis_event_bridge/featured_source"
 require_relative "app/services/credis_event_bridge/demo_form_source"
@@ -858,6 +859,7 @@ module ::CredisEventBridge
     end
 
     def source_extensions_complete?
+      BadgeSource.verify! if ENV.fetch("CREDIS_FORUM_BADGE_CAPTURE", "false") == "true"
       wrapper_installations.all? { |installation| wrapper_installed?(installation) } &&
         callback_installations.all? { |installation| callback_installed_exactly_once?(installation) }
     rescue NameError
