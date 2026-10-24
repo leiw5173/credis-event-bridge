@@ -1264,6 +1264,9 @@ after_initialize do
     CredisEventBridge::DemoFormUIConfiguration.template_fields
   end
   Rails.application.config.filter_parameters.concat(%i[credis_form_submission submission])
+  # Core asset builds load plugins with database and Redis explicitly disabled.
+  next if GlobalSetting.skip_db? && GlobalSetting.skip_redis?
+
   CredisEventBridge.install_source_extensions!
   if ENV["CREDIS_FULL_FIRST_START_PREFLIGHT"] == "true"
     CredisEventBridge::DeploymentPreflight.verify_boot!
