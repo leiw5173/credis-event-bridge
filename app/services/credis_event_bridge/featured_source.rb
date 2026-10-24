@@ -274,6 +274,9 @@ module CredisEventBridge
     end
 
     def add_or_create_tags_by_name(taggable, tag_names_arg, opts = {})
+      # Category allowlists use category_tags, not the rewarded topic_tags relation.
+      return super if taggable.instance_of?(Category)
+
       FeaturedSource.quarantine("featured_system_tagging_bypass") { super }
     end
 
