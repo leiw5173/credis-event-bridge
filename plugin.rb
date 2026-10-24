@@ -7,6 +7,7 @@
 # url: https://github.com/spacemit/credis
 
 require "digest"
+require_relative "lib/credis_event_bridge/deployment_preflight"
 
 module ::CredisEventBridge
   PLUGIN_NAME = "credis-event-bridge"
@@ -1264,5 +1265,9 @@ after_initialize do
   end
   Rails.application.config.filter_parameters.concat(%i[credis_form_submission submission])
   CredisEventBridge.install_source_extensions!
-  CredisEventBridge::EpochLifecycle.recover_uncontrolled_restart!
+  if ENV["CREDIS_FULL_FIRST_START_PREFLIGHT"] == "true"
+    CredisEventBridge::DeploymentPreflight.verify_boot!
+  else
+    CredisEventBridge::EpochLifecycle.recover_uncontrolled_restart!
+  end
 end
