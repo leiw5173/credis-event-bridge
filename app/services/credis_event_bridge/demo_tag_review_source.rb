@@ -34,7 +34,7 @@ module CredisEventBridge
       end
 
       def enabled?
-        ENABLED && DemoFormSource::ENABLED && configured_tag_id.positive?
+        ENABLED && configured_tag_id.positive?
       end
 
       def verify_source!
@@ -66,14 +66,17 @@ module CredisEventBridge
         result = nil
         Capture.with_source_operation(post_id: post.id) do |collecting, snapshot|
           current = Post.with_deleted.lock("FOR UPDATE").find(post.id)
-          submission = latest_submission(current.id)
+          legacy = CredisDemoTagRevisionProjection.where(post_id: current.id).where("append_authority->>'schema_version'='1'").exists? ||
+            CredisDemoTagReview.where(post_id: current.id).exists?
+          submission = legacy ? latest_submission(current.id) : nil
           frame = {
+            legacy: legacy,
             post_id: current.id, topic_id: current.topic_id, editor_id: editor&.id,
             before_version: current.version, before_identity: post_identity(current),
             before_revision_id: PostRevision.where(post_id: current.id).maximum(:id) || 0,
             before_tag_rows: tag_rows(current.topic_id), approval_tag_id: configured_tag_id,
             submission_id: submission&.id,
-            before_binding: collecting && submission_binding?(submission, current, snapshot),
+            before_binding: collecting && (legacy ? submission_binding?(submission, current, snapshot) : snapshot && snapshot[:target_content_status] == "eligible"),
             collecting: collecting, epoch: collecting ? collecting_epoch! : nil,
             operation_uid: SecureRandom.uuid, tag_change: nil,
           }
@@ -133,6 +136,51 @@ module CredisEventBridge
       end
 
       def flush!(frame)
+        return flush_legacy!(frame) if frame[:legacy]
+        change = frame[:tag_change]
+        return unless change
+        before_ids = change.fetch(:before).map(&:first).sort
+        after_ids = change.fetch(:after).map(&:first).sort
+        tag_id = frame.fetch(:approval_tag_id)
+        reserved = before_ids.include?(tag_id) != after_ids.include?(tag_id)
+        unless frame.fetch(:collecting) && !frame[:untrusted_tags] && Capture.collecting?
+          raise Baseline::Incomplete, "Demo tag review capture is unavailable" if reserved
+          return
+        end
+        raise Baseline::Incomplete, "Demo tag configuration differs" unless configured_tag_id == tag_id
+        post = Post.with_deleted.find(frame.fetch(:post_id))
+        submission = nil
+        snapshot = Capture.source_snapshot(post.id)
+        bound = frame.fetch(:before_binding) && post_identity(post) == frame.fetch(:before_identity) &&
+          snapshot && snapshot[:target_content_status] == "eligible"
+        unless bound
+          raise Baseline::Incomplete, "Demo tag submission binding differs" if reserved
+          return
+        end
+        revision = PostRevision.lock("FOR SHARE").find_by(post_id: post.id, number: post.version)
+        current_revision = post.version == frame.fetch(:before_version) + 1 && revision &&
+          revision.id > frame.fetch(:before_revision_id) && revision.user_id == frame.fetch(:editor_id) &&
+          native_tags_only?(revision)
+        unless current_revision
+          raise Baseline::Incomplete, "Demo tag current revision is not new and metadata-only" if reserved
+          return
+        end
+        raise Baseline::Incomplete, "Demo tag final state differs" unless tag_rows(post.topic_id) == change.fetch(:after)
+        names = native_tag_names!(revision.attributes_before_type_cast.fetch("modifications"))
+        raise Baseline::Incomplete, "Demo tag native before/after differs" unless
+          resolved_tag_ids!(names[0], change.fetch(:before)) == before_ids &&
+          resolved_tag_ids!(names[1], change.fetch(:after)) == after_ids
+        operator = User.lock.find_by(id: frame.fetch(:editor_id))
+        raise Discourse::InvalidAccess unless operator && (!reserved || operator.admin?)
+        projection = CredisDemoTagRevisionProjection.append_current!(post: post, revision: revision,
+          submission: submission, operator: operator, epoch: frame.fetch(:epoch),
+          operation_uid: frame.fetch(:operation_uid), before_tag_ids: before_ids, after_tag_ids: after_ids)
+        return projection # v3 authority is the native projection, never a synthetic legacy review.
+
+
+      end
+
+      def flush_legacy!(frame)
         change = frame[:tag_change]
         return unless change
         before_ids = change.fetch(:before).map(&:first).sort

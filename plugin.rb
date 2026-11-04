@@ -207,7 +207,7 @@ module ::CredisEventBridge
           "post-lifecycle-v3:#{PostLifecycle::ENABLED}",
           "demo-form-source-v1:#{DemoFormSource::ENABLED}",
           *(DemoFormSource::ENABLED ? ["demo-form-authority-v1", *DemoFormAppendAuthority::SOURCE_DIGESTS.values] : []),
-          *(DemoTagReviewSource::ENABLED ? ["demo-tag-review-source-v1", *DemoTagReviewAppendAuthority::SOURCE_DIGESTS.values] : []),
+          *(DemoTagReviewSource::ENABLED ? ["demo-category-tag-source-v2", *DemoTagReviewAppendAuthority::SOURCE_DIGESTS.values] : []),
           "solved-source-v1:#{SolvedSource::ENABLED}",
           *(SolvedSource::ENABLED ? SolvedSource::SOURCE_FILES.values : []),
           *(FeaturedSource::ENABLED ? ["featured-source-v1", *FeaturedSource::SOURCE_FILES.values] : []),

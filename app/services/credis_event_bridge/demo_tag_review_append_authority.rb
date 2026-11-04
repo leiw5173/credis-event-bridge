@@ -79,6 +79,70 @@ module CredisEventBridge
       END;
     SQL
 
+    CATEGORY_PROJECTION_SQL_BODY = <<~SQL
+      DECLARE
+        p posts%ROWTYPE; t topics%ROWTYPE; c categories%ROWTYPE;
+        r post_revisions%ROWTYPE;
+        u users%ROWTYPE; e credis_capture_epochs%ROWTYPE;
+        native_xid xid8;
+        actual_tags bigint[];
+      BEGIN
+        IF NEW.submission_evidence_id IS NOT NULL THEN
+          #{PROJECTION_SQL_BODY}
+        END IF;
+        IF NEW.append_authority IS NOT NULL THEN
+          RAISE EXCEPTION 'Demo tag projection authority is generated' USING ERRCODE='check_violation';
+        END IF;
+        SELECT * INTO p FROM posts WHERE id=NEW.post_id FOR UPDATE;
+        SELECT * INTO t FROM topics WHERE id=p.topic_id FOR SHARE;
+        SELECT * INTO c FROM categories WHERE id=t.category_id FOR SHARE;
+        SELECT * INTO r FROM post_revisions WHERE id=NEW.post_revision_id FOR SHARE;
+        SELECT xmin::text::xid8 INTO native_xid FROM post_revisions WHERE id=NEW.post_revision_id;
+        SELECT * INTO u FROM users WHERE id=NEW.operator_user_id FOR UPDATE;
+        SELECT * INTO e FROM credis_capture_epochs WHERE epoch_id=NEW.epoch_id FOR SHARE;
+        IF p.id IS NULL OR t.id IS NULL OR c.id IS NULL OR r.id IS NULL
+          OR u.id IS NULL OR e.epoch_id IS NULL
+          OR p.post_number<>1 OR p.post_type<>1 OR p.deleted_at IS NOT NULL
+          OR COALESCE(p.hidden,FALSE) OR COALESCE(p.user_deleted,FALSE)
+          OR t.deleted_at IS NOT NULL OR t.visible IS NOT TRUE OR t.archetype<>'regular'
+          OR c.read_restricted IS NOT FALSE OR p.raw IS NULL OR r.modifications IS NULL
+          OR r.post_id<>p.id OR r.number<>p.version OR r.number<>NEW.revision_number
+          OR r.user_id IS DISTINCT FROM u.id OR pg_xact_status(native_xid)<>'in progress'
+          OR NEW.author_user_id<>p.user_id OR NEW.category_id<>c.id
+          OR NEW.submission_evidence_id IS NOT NULL OR NEW.form_template_id IS NOT NULL OR NEW.template_sha256 IS NOT NULL
+          OR NEW.modifications_sha256<>encode(sha256(convert_to(r.modifications,'UTF8')),'hex')
+          OR NEW.post_raw_sha256<>encode(sha256(convert_to(p.raw,'UTF8')),'hex')
+          OR e.status<>'collecting' OR e.baseline_complete IS NOT TRUE
+          OR e.compatibility_token IS NULL THEN
+          RAISE EXCEPTION 'Demo tag projection binding differs' USING ERRCODE='check_violation';
+        END IF;
+        SELECT COALESCE(array_agg(tag_id ORDER BY tag_id),ARRAY[]::bigint[]) INTO actual_tags
+          FROM topic_tags WHERE topic_id=t.id;
+        IF NEW.after_tag_ids IS DISTINCT FROM actual_tags
+          OR NEW.before_tag_ids IS DISTINCT FROM ARRAY(SELECT DISTINCT x FROM unnest(NEW.before_tag_ids) x ORDER BY x)
+          OR NEW.after_tag_ids IS DISTINCT FROM ARRAY(SELECT DISTINCT x FROM unnest(NEW.after_tag_ids) x ORDER BY x)
+          OR EXISTS(SELECT 1 FROM unnest(NEW.before_tag_ids||NEW.after_tag_ids) x
+            WHERE x<=0 OR NOT EXISTS(SELECT 1 FROM tags WHERE id=x))
+          OR NEW.before_tag_ids=NEW.after_tag_ids THEN
+          RAISE EXCEPTION 'Demo tag projection association differs' USING ERRCODE='check_violation';
+        END IF;
+        NEW.occurred_at:=clock_timestamp();
+        IF NEW.occurred_at<e.started_at THEN
+          RAISE EXCEPTION 'Demo tag projection precedes epoch' USING ERRCODE='check_violation';
+        END IF;
+        NEW.append_authority:=jsonb_build_object('schema_version',2,
+          'projection',to_jsonb(NEW)-'append_authority',
+          'post_revision',jsonb_build_object('id',r.id,'post_id',r.post_id,'number',r.number,
+            'user_id',r.user_id,'modifications_sha256',NEW.modifications_sha256),
+          'post',jsonb_build_object('id',p.id,'topic_id',t.id,'author_user_id',p.user_id,
+            'category_id',c.id,'version',p.version,'raw_sha256',NEW.post_raw_sha256),
+          'operator',jsonb_build_object('id',u.id,'admin',u.admin),
+          'epoch',jsonb_build_object('id',e.epoch_id,'compatibility_token',e.compatibility_token,
+            'started_at',e.started_at));
+        RETURN NEW;
+      END;
+    SQL
+
     SQL_BODY = <<~SQL
       DECLARE
         p posts%ROWTYPE; t topics%ROWTYPE; c categories%ROWTYPE;
@@ -182,6 +246,7 @@ module CredisEventBridge
       app/services/credis_event_bridge/demo_tag_review_source.rb
       app/services/credis_event_bridge/demo_tag_review_append_authority.rb
       db/migrate/20261004000019_create_credis_demo_tag_reviews.rb
+      db/migrate/20261101000030_add_credis_category_tag_projection.rb
     ].freeze
     SOURCE_DIGESTS = IMPLEMENTATION_FILES.to_h { |path| [path, Digest::SHA256.file(File.join(ROOT, path)).hexdigest] }.freeze
 
@@ -196,7 +261,7 @@ module CredisEventBridge
 
       def verify_installed!
         return true unless DemoTagReviewSource::ENABLED
-        [["credis_demo_tag_revision_projections", "certify_credis_demo_tag_projection_append", "credis_demo_tag_projection_append_authority", PROJECTION_SQL_BODY],
+        [["credis_demo_tag_revision_projections", "certify_credis_demo_tag_projection_append", "credis_demo_tag_projection_append_authority", CATEGORY_PROJECTION_SQL_BODY],
          ["credis_demo_tag_reviews", "certify_credis_demo_tag_review_append", "credis_demo_tag_review_append_authority", SQL_BODY]].each do |table, function, trigger, body|
           row = ActiveRecord::Base.connection.select_one(<<~SQL)
             SELECT p.prosrc,
