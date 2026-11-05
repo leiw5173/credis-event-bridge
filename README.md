@@ -15,9 +15,12 @@ hooks:
         cd: $home/plugins
         cmd:
           - git clone https://github.com/leiw5173/credis-event-bridge.git credis-event-bridge
+          - git -C credis-event-bridge checkout --detach <APPROVED_PLUGIN_COMMIT>
 ```
 
-论坛维护人在`/var/discourse`执行`./launcher rebuild app`。单容器切换/启动期间论坛会暂时不可用；先备份并安排维护窗口，不承诺零停机。源码部署将仓库clone到Discourse的`plugins/credis-event-bridge`，按其原流程构建、迁移和重启Web/worker。
+`<APPROVED_PLUGIN_COMMIT>`替换为核准提交后再执行；平台文档提供参考组合，不要求版本号相同，勿直接部署默认分支最新代码。
+
+仅首次安装或实际更新本插件时，论坛维护人在`/var/discourse`执行`./launcher rebuild app`。单容器切换/启动期间论坛会暂时不可用；先备份并安排维护窗口，不承诺零停机。源码部署将仓库clone到Discourse的`plugins/credis-event-bridge`，按其原流程构建、迁移和重启Web/worker。
 
 安装不等于采集激活或计分许可。插件加载钩子/兼容检查，没有完全停用总开关；新安装可延后首次epoch激活，已有来源须走受控生命周期，不能删历史或换槽绕过断档。
 
@@ -28,6 +31,8 @@ hooks:
 完整配置、主29表/Report publication及采集生命周期见[平台部署说明](https://github.com/leiw5173/SpacemitCredits/blob/docs/docker-deployment83-20261104/README.md)。真实论坛来源、验签和记账分别验证，安装或HTTP成功不代表允许生产计分。
 
 ## 维护与验证
+
+平台与两个插件独立发布，仅要求事件、签名及来源合同兼容，不要求版本号相同或同步升级。**平台升级未改变论坛合同、插件代码或论坛配置时，无需更新、重启或重建论坛**；已有兼容插件可继续使用。主项目gitlink记录参考版本，不强制论坛跟随。只有插件、迁移、依赖或论坛配置需要变化时，才安排论坛侧操作；Discourse Core升级另核源码兼容。
 
 本仓库是事件桥唯一维护源；主项目的`discourse-plugin/`子模块固定经核准的提交。更新前对目标Core与平台组合做隔离验证；网页更新器能否安全更新当前组合尚未验收，勿自动跟随主分支部署生产。
 
